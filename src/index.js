@@ -3,6 +3,8 @@
  * Entry point - starts the proxy server
  */
 
+import 'dotenv/config'; // Load .env file if present
+
 import app from './server.js';
 import { DEFAULT_PORT } from './constants.js';
 import { logger } from './utils/logger.js';
@@ -13,6 +15,7 @@ import os from 'os';
 const args = process.argv.slice(2);
 const isDebug = args.includes('--debug') || process.env.DEBUG === 'true';
 const isFallbackEnabled = args.includes('--fallback') || process.env.FALLBACK === 'true';
+const isAuthEnabled = !!process.env.PROXY_API_KEY;
 
 // Initialize logger
 logger.setDebug(isDebug);
@@ -42,7 +45,7 @@ app.listen(PORT, () => {
     // align for 2-space indent (60 chars), align4 for 4-space indent (58 chars)
     const align = (text) => text + ' '.repeat(Math.max(0, 60 - text.length));
     const align4 = (text) => text + ' '.repeat(Math.max(0, 58 - text.length));
-    
+
     // Build Control section dynamically
     let controlSection = '║  Control:                                                    ║\n';
     if (!isDebug) {
@@ -55,7 +58,7 @@ app.listen(PORT, () => {
 
     // Build status section if any modes are active
     let statusSection = '';
-    if (isDebug || isFallbackEnabled) {
+    if (isDebug || isFallbackEnabled || isAuthEnabled) {
         statusSection = '║                                                              ║\n';
         statusSection += '║  Active Modes:                                               ║\n';
         if (isDebug) {
@@ -63,6 +66,9 @@ app.listen(PORT, () => {
         }
         if (isFallbackEnabled) {
             statusSection += '║    ✓ Model fallback enabled                                  ║\n';
+        }
+        if (isAuthEnabled) {
+            statusSection += '║    ✓ API key protection enabled                              ║\n';
         }
     }
 
@@ -99,7 +105,7 @@ ${border}    ${align4(`export ANTHROPIC_BASE_URL=http://localhost:${PORT}`)}${bo
 ║                                                              ║
 ╚══════════════════════════════════════════════════════════════╝
   `);
-    
+
     logger.success(`Server started successfully on port ${PORT}`);
     if (isDebug) {
         logger.warn('Running in DEBUG mode - verbose logs enabled');

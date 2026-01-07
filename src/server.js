@@ -58,8 +58,45 @@ app.use(cors());
 app.use(express.json({ limit: REQUEST_BODY_LIMIT }));
 
 /**
+ * API Key Validation Middleware
+ * Only active if PROXY_API_KEY environment variable is set.
+ * Consistent with Anthropic's requirement for x-api-key header.
+ */
+app.use((req, res, next) => {
+    const proxyApiKey = process.env.PROXY_API_KEY;
+
+    // If no key is configured, allow all requests (original behavior)
+    if (!proxyApiKey) {
+        return next();
+    }
+
+    // Health check and account-limits are exempt (useful for monitoring/admin)
+    if (req.path === '/health' || req.path === '/account-limits') {
+        return next();
+    }
+
+    // Support both Anthropic-style 'x-api-key' and generic 'Authorization' header
+    const apiKey = req.headers['x-api-key'] || (req.headers['authorization']?.startsWith('Bearer ') ? req.headers['authorization'].slice(7) : null);
+
+    if (!apiKey || apiKey !== proxyApiKey) {
+        logger.warn(`[Server] Unauthorized request from ${req.ip}: Missing or invalid API key`);
+        return res.status(401).json({
+            type: 'error',
+            error: {
+                type: 'authentication_error',
+                message: 'Invalid or missing API key. Please check your PROXY_API_KEY configuration.'
+            }
+        });
+    }
+
+    next();
+});
+
+/**
  * Parse error message to extract error type, status code, and user-friendly message
  */
+
+
 function parseError(error) {
     let errorType = 'api_error';
     let statusCode = 500;
@@ -107,7 +144,7 @@ app.use((req, res, next) => {
     // Skip logging for event logging batch unless in debug mode
     if (req.path === '/api/event_logging/batch') {
         if (logger.isDebugEnabled) {
-             logger.debug(`[${req.method}] ${req.path}`);
+            logger.debug(`[${req.method}] ${req.path}`);
         }
     } else {
         logger.info(`[${req.method}] ${req.path}`);
@@ -123,11 +160,11 @@ app.get('/health', async (req, res) => {
     try {
         await ensureInitialized();
         const start = Date.now();
-        
+
         // Get high-level status first
         const status = accountManager.getStatus();
         const allAccounts = accountManager.getAllAccounts();
-        
+
         // Fetch quotas for each account in parallel to get detailed model info
         const accountDetails = await Promise.allSettled(
             allAccounts.map(async (account) => {
